@@ -95,7 +95,7 @@ rownames(results_gev) <- NULL
 
 head(results_gev)
 
-#extract on row per grid cell and plot the distribution related to this grid cell
+#extract one row per grid cell and map the distribution related to this grid cell
 results_gev=results_gev%>%
   filter(Return_Period==100)
 
