@@ -253,6 +253,78 @@ g + geom_segment(
   arrow = arrow(ends = "first")
 )
 
+max_cwd_crit=ld%>%
+  select(1,2)
+
+# Ft the LOESS model
+Loess_model <- loess(wevi ~ deficit, data = cwd_evi_drydowns)
+
+# Add the LOESS fitted values into the dataframe
+cwd_evi_drydowns$loess_fitted = Loess_model$fitted
+
+# Compute the 90th percentile of the deficit + calculate the mean of wevi from it
+quantile_10_mean_evi <- cwd_evi_drydowns %>%
+  filter(deficit >= quantile(deficit, 0.9)) %>%
+  summarise(mean_evi = mean(wevi)) %>%
+  pull(mean_evi)
+
+# Identify the max value from the LOESS fitted values
+max_fitted_evi <- max(cwd_evi_drydowns$loess_fitted)
+# Find the index of the max fitted EVI (which.max returns the position  where the max value is found) + corresponding CWD value
+max_cwd_fitted_evi <- cwd_evi_drydowns$deficit[which.max(cwd_evi_drydowns$loess_fitted)]
+
+# Calculate the point where EVI drops to 90% from maximum towards the mean EVI
+target_evi <- max_fitted_evi - 0.90 * (max_fitted_evi - quantile_10_mean_evi)
+
+# Find the clossest CWD value matching target_evi
+deficit_at_target_evi <- cwd_evi_drydowns$deficit[which.min(abs(cwd_evi_drydowns$loess_fitted - target_evi))]
+
+# Output
+print(paste("Maximum fitted EVI:", max_fitted_evi, "at CWD:", max_cwd_fitted_evi))
+print(paste("Target EVI (90% decline):", target_evi))
+print(paste("CWD for 90% decline:", deficit_at_target_evi))
+print(paste("Mean EVI the uppermost 10%-quantile CWD :", quantile_10_mean_evi))
+
+# Plot the results
+
+# get  starting value from the 90th percentile of the deficit (CWD min 90%)
+deficit_threshold <- quantile(cwd_evi_drydowns$deficit, 0.9)
+
+# CWD max 90%
+max_deficit <- max(cwd_evi_drydowns$deficit)
+
+# Define breaks for the x-axis
+breaks <- c(deficit_threshold, max_deficit, max_cwd_fitted_evi, deficit_at_target_evi)
+labels <- c(
+  paste("CWD min 90%: ", format(deficit_threshold, digits = 2)),
+  paste("CWD max : ", format(max_deficit, digits = 2)),
+  paste("CWDcritical at: ", format(max_cwd_fitted_evi, digits = 2)),
+  paste("CWDthreshold at: ", format(deficit_at_target_evi, digits = 2))
+)
+
+g <- ggplot(cwd_evi_drydowns, aes(x = deficit, y = wevi)) +
+  geom_rect(aes(xmin = deficit_threshold, xmax = max_deficit, ymin = -Inf, ymax = Inf),   # Highlight the area for the uppermost 10%-quantile CWD
+            fill = "#fcbba1", alpha = 0.5) +
+  geom_rect(aes(xmin = max_cwd_fitted_evi, xmax = deficit_at_target_evi, ymin = -Inf, ymax = Inf), # Highlight the area of max loess to EVI decline point
+            fill = "#99d8c9", alpha = 0.3) +
+  geom_smooth(method = "loess", se = FALSE) +
+  geom_vline(xintercept = c(deficit_threshold, max_deficit, max_cwd_fitted_evi, deficit_at_target_evi),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  geom_point(aes(x = max_cwd_fitted_evi, y = max_fitted_evi), color = "blue", size = 4) +
+  annotate("text", x =  max_cwd_fitted_evi, y = max_fitted_evi, label = sprintf("Max LOESS: %.2f", max_fitted_evi),
+           hjust = 1, vjust = -1, color = "blue") +
+  geom_point(aes(x = deficit_at_target_evi, y = target_evi), color = "red", size = 4) +
+  annotate("text", x = deficit_at_target_evi, y = target_evi, label = sprintf("EVI-decline: %.2f", target_evi),
+           hjust = -0.1, vjust = -1, color = "red") +
+  annotate("text", x = (deficit_threshold + max_deficit) / 2,
+           y = quantile_10_mean_evi, label = paste("Mean wEVI:", format(quantile_10_mean_evi, digits = 2)),
+           color = "black", fontface = "bold", vjust = -8 ) +
+  scale_x_continuous(breaks = breaks, labels = labels) +
+  theme_minimal() +
+  labs(title = "LOESS - Relationship CWD vs. EVI ", x = "CWD", y = "EVI")
+
+g
+
 ############### CWP RP to wEVI  ##############################
 
 # load the df of the deficit events, select the max deficit per grid cell
@@ -266,14 +338,14 @@ max_deficits <- deficit_events_list_short %>%
             date = start_date[which.max(total_deficit)]) %>%
   ungroup()
 
-# Then, identify lat, lon pairs that have data for each year in the range
+# Identify grid cells that have data for each year in the range
 valid_cells <- max_deficits %>%
   group_by(lat, lon) %>%
   summarise(n_years = n_distinct(year)) %>%
   filter(n_years == 24) %>%
   ungroup()
 
-# Finally, join the list of valid cells back to the filtered dataframe
+# Join the list of valid cells back to the initil max deficit df
 df_filtered_cwd <- valid_cells %>%
   dplyr::select(lat, lon) %>%
   left_join(max_deficits, by = c("lat", "lon"))
@@ -287,7 +359,7 @@ df <- df_filtered_cwd  |>
   nest()
 
 
-# pixel 1 is not extreme in 2023
+# Time serie for a grid cell
 df$data[[1]] |>
   ggplot(aes(year, total_deficit)) +
   geom_line()
