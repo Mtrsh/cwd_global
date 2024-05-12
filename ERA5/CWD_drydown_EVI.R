@@ -325,6 +325,23 @@ g <- ggplot(cwd_evi_drydowns, aes(x = deficit, y = wevi)) +
 
 g
 
+
+# Store the results in a df
+cwd_evi_loess_grid_cell <- data.frame(
+  Latitude = cwd_evi_drydowns$lat[1],  # Assuming all lat values are the same
+  Longitude = cwd_evi_drydowns$lon[1],  # Assuming all lon values are the same
+  Max_fitted_LOESS = max_fitted_evi,
+  CWD_max_LOESS = max_cwd_fitted_evi,
+  EVI_90_decline = target_evi,
+  CWD_90_decline = deficit_at_target_evi,
+  Mean_EVI_10p = quantile_10_mean_evi,
+  Min_CWD_10p = deficit_threshold,
+  Max_CWD_10p = max_deficit
+)
+
+save(cwd_evi_loess_grid_cell , file = "/Net/Groups/BGI/scratch/mterristi/PhD/Data/CWD/cwd_evi_loess_grid_cell.Rdata")
+
+
 ############### CWP RP to wEVI  ##############################
 
 # load the df of the deficit events, select the max deficit per grid cell
