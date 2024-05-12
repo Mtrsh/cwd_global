@@ -222,7 +222,9 @@ p3=ggplot(cwd_evi_drydowns, aes(x = day_of_year, y = wevi, color = as.factor(yea
 p2/p3
 
 
-############### how wEVI responds? example for one grid cell ###################
+###########################################################################
+############### how weekly EVI responds? example for one grid cell
+###########################################################################
 
 
 ggplot(cwd_evi_drydowns, aes(x = deficit, y = wevi)) +
@@ -235,71 +237,21 @@ ggplot(cwd_evi_drydowns, aes(x = deficit, y = wevi)) +
   ) +
   theme_minimal()
 
-###########################################################################
-############### how weekly EVI responds? example for all the grid cells
-###########################################################################
+# Find CWDcrit and CWDmax
 
-#load the df
-load("/Net/Groups/BGI/scratch/mterristi/PhD/Data/CWD/cwd_drydowns_evi_spain.Rdata")
+g=ggplot(cwd_evi_drydowns, aes(x = deficit, y = wevi)) +
+  geom_smooth(method = "loess", se = FALSE)
 
-#remove rows where we don't have matching values between CWD and EVI
-cwd_evi_drydowns_all <- na.omit(cwd_evi_drydowns_all)
+# Get and filter extrema
+ld <- layer_data(g)
+ld <- ld[c(which.max(ld$y), which.min(ld$y)), ]
 
-str(cwd_evi_drydowns_all)
-
-#assign an unique ID to each grid cell
-unique_pixels <- cwd_evi_drydowns_all %>%
-  distinct(lat, lon) %>%
-  mutate(pixel_id = row_number())  # Assign sequential ID
-
-cwd_evi_drydowns_all <- cwd_evi_drydowns_all %>%
-  left_join(unique_pixels, by = c("lat", "lon"))
-
-cwd_evi_drydowns_all <- cwd_evi_drydowns_all %>%
-  mutate(pixel_id = as.factor(pixel_id))
-
-head(cwd_evi_drydowns_all)
-
-#
-cwd_evi_drydowns_all_fig_loess <- ggplot(cwd_evi_drydowns_all, aes(x = deficit, y = wevi, color = pixel_id)) +
-  geom_smooth(aes(group = pixel_id), method = "loess", span = 0.9, se = FALSE) +
-  labs(
-    title = "LOESS-Relationship between CWD and wEVI (2000-2023)",
-    x = "CWD",
-    y = "wEVI"
-  ) +
-  theme_minimal() +
-  scale_color_viridis_d(guide = "none")
-
-#error message: `geom_smooth()` using formula = 'y ~ x'
-#Warning messages:
-#1: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric, : span too small.   fewer data values than degrees of freedom.
-#2: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : pseudoinverse used at 839.49
-#3: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : neighborhood radius 53.597
-#4: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : reciprocal condition number  0
-# 5: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : There are other near singularities as well. 2542.3
-
-hist(cwd_evi_drydowns_all$deficit,
-     main = "Histogram of Deficit", xlab = "Deficit")
-
-
-# Sample a subset of the data
-sampled_data <- cwd_evi_drydowns_all %>%
-  filter(pixel_id<=110)
-
-sampled_data <- sampled_data %>%
-  mutate(pixel_id = as.factor(pixel_id))
-
-
-# Plot with sampled data
-sampled_plot <- ggplot(sampled_data, aes(x = deficit, y = wevi, color = pixel_id), size=0.01) +
-  geom_smooth(aes(group = pixel_id), method = "loess", se = FALSE, span=0.5) +
-  labs(title = "Sampled data (110 grid cells): Relationship between CWD and wEVI (2000-2023)", x = "CWD", y = "wEVI") +
-  theme_minimal()+guides(fill="none", color="none")
-
-print(sampled_plot)
-
-
+# Make an annotation
+g + geom_segment(
+  data = ld,
+  aes(x = x, y = y, xend = x, yend = c(Inf, -Inf)),
+  arrow = arrow(ends = "first")
+)
 
 ############### CWP RP to wEVI  ##############################
 
@@ -445,12 +397,11 @@ gg2 <- df |>
 gg1 / gg2
 
 
-
 # Unnest the data
 df_unnested <- df %>%
   unnest(data)
 
-# select evi per year during drydown
+# select evi per year during drydown event
 evi_drydown= cwd_evi_drydowns%>%
   filter(lat==41.125& lon==-5.125)
 
@@ -460,24 +411,90 @@ max_deficits_evi <- cwd_evi_drydowns%>%
             date = date[which.max(wevi)]) %>%
   ungroup()
 
-
+# Merge Return Period CWD (based on max CWD during drydown event) and max_evi during these dry down event
 cwd_evi_rp= merge(df_unnested, max_deficits_evi, by=c("year", "lat", "lon"))
 
+head(cwd_evi_rp)
 library(viridis)
 
-# Plotting a LOESS curve per grid cell
+# Plota LOESS curve
 cwd_evi_rp_loess <- ggplot(cwd_evi_rp, aes(x = return_periods_gumbel, y = max_evi, group = site, color = site)) +
-  geom_smooth(method = "loess", se = FALSE) +  # Using LOESS smoothing
-  scale_color_viridis(discrete = TRUE, option = "D") +  # Apply viridis color palette, set discrete = TRUE for categorical data
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_viridis(discrete = TRUE, option = "D") +
   labs(
     title = "LOESS-Relationship between return period of annual max CWD and annual max wEVI during drydown events (2000-2023)",
     x = "Return Period of CWD",
     y = "Maximum EVI"
   ) +
   theme_minimal() +
-  theme(legend.position = "none")  # Optional: Hide the legend if too many groups
+  theme(legend.position = "none")  # Hide the legend if too many groups of grid cells
 
-# Display the plot
 print(cwd_evi_rp_loess)
+
+
+###########################################################################
+############### how weekly EVI responds? example for all the grid cells
+###########################################################################
+
+#load the df
+load("/Net/Groups/BGI/scratch/mterristi/PhD/Data/CWD/cwd_drydowns_evi_spain.Rdata")
+
+#remove rows where we don't have matching values between CWD and EVI
+cwd_evi_drydowns_all <- na.omit(cwd_evi_drydowns_all)
+
+str(cwd_evi_drydowns_all)
+
+#assign an unique ID to each grid cell
+unique_pixels <- cwd_evi_drydowns_all %>%
+  distinct(lat, lon) %>%
+  mutate(pixel_id = row_number())  # Assign sequential ID
+
+cwd_evi_drydowns_all <- cwd_evi_drydowns_all %>%
+  left_join(unique_pixels, by = c("lat", "lon"))
+
+cwd_evi_drydowns_all <- cwd_evi_drydowns_all %>%
+  mutate(pixel_id = as.factor(pixel_id))
+
+head(cwd_evi_drydowns_all)
+
+#
+cwd_evi_drydowns_all_fig_loess <- ggplot(cwd_evi_drydowns_all, aes(x = deficit, y = wevi, color = pixel_id)) +
+  geom_smooth(aes(group = pixel_id), method = "loess", span = 0.9, se = FALSE) +
+  labs(
+    title = "LOESS-Relationship between CWD and wEVI (2000-2023)",
+    x = "CWD",
+    y = "wEVI"
+  ) +
+  theme_minimal() +
+  scale_color_viridis_d(guide = "none")
+
+#error message: `geom_smooth()` using formula = 'y ~ x'
+#Warning messages:
+#1: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric, : span too small.   fewer data values than degrees of freedom.
+#2: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : pseudoinverse used at 839.49
+#3: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : neighborhood radius 53.597
+#4: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : reciprocal condition number  0
+# 5: In simpleLoess(y, x, w, span, degree = degree, parametric = parametric,  : There are other near singularities as well. 2542.3
+
+hist(cwd_evi_drydowns_all$deficit,
+     main = "Histogram of Deficit", xlab = "Deficit")
+
+
+# Sample a subset of the data
+sampled_data <- cwd_evi_drydowns_all %>%
+  filter(pixel_id<=110)
+
+sampled_data <- sampled_data %>%
+  mutate(pixel_id = as.factor(pixel_id))
+
+
+# Plot with sampled data
+sampled_plot <- ggplot(sampled_data, aes(x = deficit, y = wevi, color = pixel_id), size=0.01) +
+  geom_smooth(aes(group = pixel_id), method = "loess", se = FALSE, span=0.5) +
+  labs(title = "Sampled data (110 grid cells): Relationship between CWD and wEVI (2000-2023)", x = "CWD", y = "wEVI") +
+  theme_minimal()+guides(fill="none", color="none")
+
+print(sampled_plot)
+
 
 
